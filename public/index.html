@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rugscore — pump.fun creator reputation gate</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0b0d12; color: #e6e8ee;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+    padding: 32px 16px 80px;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: #9aa2b1; font-size: 0.95rem; margin: 0 0 28px; }
+  .row { display: flex; gap: 8px; margin-bottom: 24px; }
+  input {
+    flex: 1; background: #151824; border: 1px solid #2a2f3f; color: #e6e8ee;
+    border-radius: 8px; padding: 12px 14px; font-size: 0.95rem; font-family: monospace;
+  }
+  input:focus { outline: none; border-color: #5b7cfa; }
+  button {
+    background: #5b7cfa; color: white; border: none; border-radius: 8px;
+    padding: 12px 20px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button:hover:not(:disabled) { background: #4a6af0; }
+  .card {
+    background: #12151f; border: 1px solid #22273a; border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .verdict { font-size: 1.1rem; font-weight: 700; margin: 0 0 10px; }
+  .verdict.pass { color: #4ade80; }
+  .verdict.flag { color: #f87171; }
+  .verdict.unknown { color: #facc15; }
+  ul { margin: 8px 0 0; padding-left: 20px; }
+  li { margin-bottom: 6px; color: #cbd0dc; font-size: 0.9rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .stat { background: #0d0f17; border-radius: 8px; padding: 10px 12px; }
+  .stat .label { font-size: 0.72rem; color: #7c8398; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+  .evidence { font-size: 0.85rem; color: #9aa2b1; line-height: 1.6; }
+  .evidence b { color: #cbd0dc; }
+  footer { color: #6b7280; font-size: 0.8rem; margin-top: 40px; line-height: 1.6; }
+  .example { color: #5b7cfa; cursor: pointer; text-decoration: underline; font-size: 0.85rem; }
+  #status { color: #7c8398; font-size: 0.85rem; min-height: 1.2em; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>rugscore</h1>
+  <p class="sub">Deterministic creator-reputation gate for pump.fun graduations. No LLM, no black box — the same threshold the live trading bot uses, exposed as a lookup.</p>
+
+  <div class="row">
+    <input id="mint" placeholder="Paste a mint address..." spellcheck="false" />
+    <button id="go">Check</button>
+  </div>
+  <div id="status"></div>
+  <div id="result"></div>
+
+  <div class="card evidence">
+    <p><b>Methodology.</b> Every pump.fun token's creator wallet is tagged at mint time: how many tokens they launched before (<code>priorCount</code>), whether this was a batch-deploy (&lt;60s after another launch by the same wallet), whether one of their prior tokens already graduated (<code>priorGrad</code>), and how much SOL they bought of their own token at creation (<code>devBuySol</code>).</p>
+    <p>On <b>11,495 real graduations</b> (two independent date-split halves), the gate <b>prior==0 &amp; devBuy≤0.5 SOL &amp; no batch</b> separates EV +13.1% / +7.5% from +4.3% / +6.4% for the rest. A creator whose prior token already graduated gets a further <b>5.3x lift</b> in graduation rate within that gate.</p>
+    <p>Separately, on rug-pull dynamics: <b>32%</b> of graduated tokens rug within 1 hour, <b>85%</b> never reach 2x, and when a rug happens, <b>71%</b> go to zero within 30 seconds — near-zero reaction time once it starts, which is why the gate matters more than any exit strategy.</p>
+    <p style="margin-bottom:0">This index covers <b id="window-note">84 days (Jun 10 – Sep 1 2026)</b> of directly observed pump.fun trade data, ~53k graduated tokens. Mints outside that window show live liquidity data only, with reputation marked "unknown" — no invented numbers.</p>
+  </div>
+
+  <footer>
+    Built on top of a live Solana memecoin trading bot's rug-detection research. Source: github.com/cristiandkzk/rugscore.
+  </footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status');
+const resultEl = $('result');
+
+fetch('/api/stats').then(r => r.json()).then(s => {
+  $('window-note').textContent = `${s.windowDays} days (${s.windowStart} – ${s.windowEnd}), ${s.indexedMints.toLocaleString()} graduated mints`;
+}).catch(() => {});
+
+function fmtUsd(n) {
+  if (n == null) return '—';
+  return '$' + n.toLocaleString();
+}
+
+async function check() {
+  const mint = $('mint').value.trim();
+  if (!mint) return;
+  $('go').disabled = true;
+  statusEl.textContent = 'Checking...';
+  resultEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/score?mint=' + encodeURIComponent(mint));
+    const data = await res.json();
+    render(data);
+    statusEl.textContent = '';
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    $('go').disabled = false;
+  }
+}
+
+function render(data) {
+  const rep = data.reputation;
+  const cls = !rep.known ? 'unknown' : rep.verdict === 'PASSES' ? 'pass' : 'flag';
+  const label = !rep.known ? 'UNKNOWN — outside historical window' : rep.verdict === 'PASSES' ? 'PASSES the validated gate' : 'FLAGGED';
+
+  let html = `<div class="card">
+    <p class="verdict ${cls}">${label}</p>
+    <ul>${rep.reasons.map(r => `<li>${r}</li>`).join('')}</ul>`;
+
+  if (rep.priorGradNote) html += `<ul><li>${rep.priorGradNote}</li></ul>`;
+
+  const m = data.market;
+  html += `<div class="grid">
+    <div class="stat"><div class="label">Liquidity (USD)</div><div class="value">${fmtUsd(m.liquidityUsd)}</div></div>
+    <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.mcapUsd)}</div></div>
+    <div class="stat"><div class="label">Buys / Sells (5m)</div><div class="value">${m.buys5m ?? '—'} / ${m.sells5m ?? '—'}</div></div>
+    <div class="stat"><div class="label">Price change (5m)</div><div class="value">${m.priceChangePct5m != null ? m.priceChangePct5m.toFixed(1) + '%' : '—'}</div></div>
+  </div></div>`;
+
+  resultEl.innerHTML = html;
+}
+
+$('go').addEventListener('click', check);
+$('mint').addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+</script>
+</body>
+</html>

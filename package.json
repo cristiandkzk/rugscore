@@ -1,0 +1,13 @@
+{
+  "name": "rugscore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic pump.fun creator-reputation gate, built on a real trading bot's rug-detection research.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
