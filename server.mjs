@@ -57,6 +57,29 @@ async function fetchDexData(mint) {
   }
 }
 
+// Fallback for tokens that haven't migrated to a DEX pool yet: DexScreener
+// has nothing for those (no pool exists), but pump.fun's own API still
+// tracks their bonding-curve market cap. Same endpoint flashrug-guard (a
+// companion extension) already uses for its drawdown-from-ATH check.
+async function fetchPumpFunCoin(mint) {
+  try {
+    const res = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const coin = await res.json();
+    if (typeof coin?.usd_market_cap !== 'number') return null;
+    const athAgeMin = coin.ath_market_cap_timestamp ? (Date.now() - coin.ath_market_cap_timestamp) / 60000 : null;
+    return {
+      stage: coin.complete ? 'graduated_unindexed' : 'bonding_curve',
+      complete: !!coin.complete,
+      marketCapUsd: Math.round(coin.usd_market_cap),
+      athMarketCapUsd: typeof coin.ath_market_cap === 'number' ? Math.round(coin.ath_market_cap) : null,
+      athAgeMin: athAgeMin != null ? Math.round(athAgeMin) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function reputationVerdict(rep) {
   if (!rep) {
     return {
@@ -100,11 +123,18 @@ const server = http.createServer(async (req, res) => {
       const mint = (url.searchParams.get('mint') || '').trim();
       if (!mint) return json(res, 400, { error: 'missing ?mint=' });
       const rep = index.get(mint) || null;
-      const [dex] = await Promise.all([fetchDexData(mint)]);
+      const dex = await fetchDexData(mint);
+      let market = dex;
+      if (!market) {
+        const curve = await fetchPumpFunCoin(mint);
+        market = curve
+          ? { ...curve, note: curve.complete ? 'Graduated, but DexScreener has no active pool for it (likely dead or delisted liquidity).' : 'Still on the pump.fun bonding curve — no DEX pool exists yet, so liquidity data does not apply.' }
+          : { note: 'No live data found on DexScreener or pump.fun for this mint. Check the address, or it may be too old/delisted.' };
+      }
       return json(res, 200, {
         mint,
         reputation: reputationVerdict(rep),
-        market: dex || { note: 'No live DexScreener pair found for this mint.' },
+        market,
       });
     }
     json(res, 404, { error: 'not found' });

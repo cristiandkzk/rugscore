@@ -116,12 +116,23 @@ function render(data) {
   if (rep.priorGradNote) html += `<ul><li>${rep.priorGradNote}</li></ul>`;
 
   const m = data.market;
-  html += `<div class="grid">
-    <div class="stat"><div class="label">Liquidity (USD)</div><div class="value">${fmtUsd(m.liquidityUsd)}</div></div>
-    <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.mcapUsd)}</div></div>
-    <div class="stat"><div class="label">Buys / Sells (5m)</div><div class="value">${m.buys5m ?? '—'} / ${m.sells5m ?? '—'}</div></div>
-    <div class="stat"><div class="label">Price change (5m)</div><div class="value">${m.priceChangePct5m != null ? m.priceChangePct5m.toFixed(1) + '%' : '—'}</div></div>
-  </div></div>`;
+  if (m.stage === 'bonding_curve' || m.stage === 'graduated_unindexed') {
+    html += `<p style="color:#facc15;font-size:0.85rem;margin:14px 0 10px">${m.note}</p>
+    <div class="grid">
+      <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.marketCapUsd)}</div></div>
+      <div class="stat"><div class="label">ATH market cap (USD)</div><div class="value">${fmtUsd(m.athMarketCapUsd)}</div></div>
+      <div class="stat" style="grid-column:1/-1"><div class="label">Time since ATH</div><div class="value">${m.athAgeMin != null ? m.athAgeMin + ' min ago' : '—'}</div></div>
+    </div></div>`;
+  } else if (m.note) {
+    html += `<p style="color:#7c8398;font-size:0.85rem;margin:14px 0 0">${m.note}</p></div>`;
+  } else {
+    html += `<div class="grid">
+      <div class="stat"><div class="label">Liquidity (USD)</div><div class="value">${fmtUsd(m.liquidityUsd)}</div></div>
+      <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.mcapUsd)}</div></div>
+      <div class="stat"><div class="label">Buys / Sells (5m)</div><div class="value">${m.buys5m ?? '—'} / ${m.sells5m ?? '—'}</div></div>
+      <div class="stat"><div class="label">Price change (5m)</div><div class="value">${m.priceChangePct5m != null ? m.priceChangePct5m.toFixed(1) + '%' : '—'}</div></div>
+    </div></div>`;
+  }
 
   resultEl.innerHTML = html;
 }
