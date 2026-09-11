@@ -1,0 +1,17 @@
+{
+  "methodology": "src/strategies/graduation.js real fills (grad-social-shadow.jsonl, realFill=true), tokens with initial post-migration price (SOL, first tick captured within 5min of migration) crossed against holdMin (actual position hold time under the bot's own trailing/stop/time-stop exit logic, not a theoretical time-to-rug) and netRet (actual realized return). Spearman initialPrice-vs-holdMin rho=0.42-0.51 across independent checks. Rug rate does NOT vary meaningfully across these deciles (89-98% throughout, see README) -- only timing and magnitude do.",
+  "generatedAt": 1789140944429,
+  "n": 43385,
+  "decileTable": [
+    { "decile": 1, "n": 4338, "minInitialPriceSol": 2.206e-12, "holdMinMedian": 2, "netRetMedianPct": -92, "netRetMeanPct": -84.4 },
+    { "decile": 2, "n": 4338, "minInitialPriceSol": 1.875e-10, "holdMinMedian": 2, "netRetMedianPct": -87.4, "netRetMeanPct": -73.6 },
+    { "decile": 3, "n": 4338, "minInitialPriceSol": 7.963e-10, "holdMinMedian": 2, "netRetMedianPct": -72.4, "netRetMeanPct": -49.4 },
+    { "decile": 4, "n": 4338, "minInitialPriceSol": 2.795e-8, "holdMinMedian": 4, "netRetMedianPct": -28.1, "netRetMeanPct": -13.6 },
+    { "decile": 5, "n": 4338, "minInitialPriceSol": 2.879e-7, "holdMinMedian": 6, "netRetMedianPct": -27, "netRetMeanPct": -10.9 },
+    { "decile": 6, "n": 4338, "minInitialPriceSol": 3.57e-7, "holdMinMedian": 6, "netRetMedianPct": -25.9, "netRetMeanPct": -11.8 },
+    { "decile": 7, "n": 4338, "minInitialPriceSol": 4.048e-7, "holdMinMedian": 6, "netRetMedianPct": -35.7, "netRetMeanPct": -25.6 },
+    { "decile": 8, "n": 4338, "minInitialPriceSol": 4.858e-7, "holdMinMedian": 6, "netRetMedianPct": -23.1, "netRetMeanPct": -7.9 },
+    { "decile": 9, "n": 4338, "minInitialPriceSol": 1.572e-6, "holdMinMedian": 16, "netRetMedianPct": -7.4, "netRetMeanPct": -14.4 },
+    { "decile": 10, "n": 4343, "minInitialPriceSol": 3.371e-5, "holdMinMedian": 36, "netRetMedianPct": 8.5, "netRetMeanPct": -7.1 }
+  ]
+}

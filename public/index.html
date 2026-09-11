@@ -46,6 +46,10 @@
   footer { color: #6b7280; font-size: 0.8rem; margin-top: 40px; line-height: 1.6; }
   .example { color: #5b7cfa; cursor: pointer; text-decoration: underline; font-size: 0.85rem; }
   #status { color: #7c8398; font-size: 0.85rem; min-height: 1.2em; margin-bottom: 8px; }
+  h2.section { font-size: 1.05rem; margin: 40px 0 4px; }
+  .row input[type="number"] { flex: 0 0 140px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; }
+  .verdict.danger { color: #f87171; }
+  .verdict.ok { color: #4ade80; }
 </style>
 </head>
 <body>
@@ -53,6 +57,16 @@
   <h1>rugscore</h1>
   <p class="sub">Deterministic creator-reputation gate for pump.fun graduations. No LLM, no black box — the same threshold the live trading bot uses, exposed as a lookup.</p>
 
+  <h2 class="section" style="margin-top:0">Check your wallet</h2>
+  <p class="sub" style="margin-bottom:14px">Paste a wallet address — reads what it currently holds (public Solana RPC, no connection or signing needed) and checks reputation + danger status for every token, no mints to paste one by one.</p>
+  <div class="row">
+    <input id="walletAddress" placeholder="Wallet address..." spellcheck="false" />
+    <button id="walletGo">Check wallet</button>
+  </div>
+  <div id="walletStatus"></div>
+  <div id="walletResult"></div>
+
+  <h2 class="section">Or check one mint</h2>
   <div class="row">
     <input id="mint" placeholder="Paste a mint address..." spellcheck="false" />
     <button id="go">Check</button>
@@ -60,10 +74,25 @@
   <div id="status"></div>
   <div id="result"></div>
 
+  <h2 class="section" id="watchlist-heading" hidden>Watching</h2>
+  <p class="sub" id="watchlist-sub" hidden style="margin-bottom:14px">Every 30s we re-run the same post-entry check on these — no need to paste the mint or track the time yourself.</p>
+  <div id="watchlist"></div>
+
+  <h2 class="section">Check a position manually</h2>
+  <p class="sub" style="margin-bottom:14px">Didn't click "watch it" when you bought? Or checking someone else's position — paste the mint and how long ago it was entered.</p>
+  <div class="row">
+    <input id="guardMint" placeholder="Mint address..." spellcheck="false" />
+    <input id="guardMinutes" type="number" min="1" placeholder="Minutes since entry" />
+    <button id="guardGo">Check</button>
+  </div>
+  <div id="guardStatus"></div>
+  <div id="guardResult"></div>
+
   <div class="card evidence">
     <p><b>Methodology.</b> Every pump.fun token's creator wallet is tagged at mint time: how many tokens they launched before (<code>priorCount</code>), whether this was a batch-deploy (&lt;60s after another launch by the same wallet), whether one of their prior tokens already graduated (<code>priorGrad</code>), and how much SOL they bought of their own token at creation (<code>devBuySol</code>).</p>
     <p>On <b>11,495 real graduations</b> (two independent date-split halves), the gate <b>prior==0 &amp; devBuy≤0.5 SOL &amp; no batch</b> separates EV +13.1% / +7.5% from +4.3% / +6.4% for the rest. A creator whose prior token already graduated gets a further <b>5.3x lift</b> in graduation rate within that gate.</p>
     <p>Separately, on rug-pull dynamics: <b>32%</b> of graduated tokens rug within 1 hour, <b>85%</b> never reach 2x, and when a rug happens, <b>71%</b> go to zero within 30 seconds — near-zero reaction time once it starts, which is why the gate matters more than any exit strategy.</p>
+    <p>One more number, and the reason this tool doesn't try to rank individual tokens by "safety": of graduated tokens that actually rally to a real post-migration price peak and go on to a resolved outcome (crash or bounce back), <b>95.6%</b> end up falling ≥80% from that peak and never recovering (n=30,984). That rate barely moves across every liquidity-size decile, creator-reputation bucket, and entry-speed cut we tested — it's the base rate for the category once a token actually pumps, not a signal any one feature can improve on. That's also why there's no "risk score" here, just the reputation gate above plus this honest number.</p>
     <p style="margin-bottom:0">This index covers <b id="window-note">84 days (Jun 10 – Sep 1 2026)</b> of directly observed pump.fun trade data, ~53k graduated tokens. Mints outside that window show live liquidity data only, with reputation marked "unknown" — no invented numbers.</p>
   </div>
 
@@ -122,23 +151,249 @@ function render(data) {
       <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.marketCapUsd)}</div></div>
       <div class="stat"><div class="label">ATH market cap (USD)</div><div class="value">${fmtUsd(m.athMarketCapUsd)}</div></div>
       <div class="stat" style="grid-column:1/-1"><div class="label">Time since ATH</div><div class="value">${m.athAgeMin != null ? m.athAgeMin + ' min ago' : '—'}</div></div>
-    </div></div>`;
+    </div>`;
   } else if (m.note) {
-    html += `<p style="color:#7c8398;font-size:0.85rem;margin:14px 0 0">${m.note}</p></div>`;
+    html += `<p style="color:#7c8398;font-size:0.85rem;margin:14px 0 0">${m.note}</p>`;
   } else {
     html += `<div class="grid">
       <div class="stat"><div class="label">Liquidity (USD)</div><div class="value">${fmtUsd(m.liquidityUsd)}</div></div>
       <div class="stat"><div class="label">Market cap (USD)</div><div class="value">${fmtUsd(m.mcapUsd)}</div></div>
       <div class="stat"><div class="label">Buys / Sells (5m)</div><div class="value">${m.buys5m ?? '—'} / ${m.sells5m ?? '—'}</div></div>
       <div class="stat"><div class="label">Price change (5m)</div><div class="value">${m.priceChangePct5m != null ? m.priceChangePct5m.toFixed(1) + '%' : '—'}</div></div>
-    </div></div>`;
+    </div>`;
   }
 
+  html += `<button class="watch-btn" data-mint="${data.mint}" style="margin-top:14px;background:#1c2030;color:#e6e8ee;border:1px solid #2a2f3f">I bought this — watch it</button></div>`;
+
   resultEl.innerHTML = html;
+  resultEl.querySelector('.watch-btn')?.addEventListener('click', (e) => {
+    addToWatchlist(e.target.dataset.mint);
+    e.target.textContent = 'Watching ✓';
+    e.target.disabled = true;
+  });
 }
 
 $('go').addEventListener('click', check);
 $('mint').addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+
+// --- Bridge: pre-trade check -> post-trade watch, no manual re-entry ----
+// The gap this closes: rugscore was two disconnected tools (check before
+// you buy, separately paste the mint + guess the minutes after). One click
+// on the result card remembers {mint, boughtAt} in this browser (no
+// backend, no wallet) and the watchlist below auto-computes elapsed time
+// and re-checks /api/guard every 30s.
+const WATCHLIST_KEY = 'rugscore_watchlist';
+// Entry times are kept SEPARATE from the active watchlist, and never
+// overwritten once set. Bug found in testing (10/9): "stop watching" then
+// "watch it" again on the same mint reset boughtAt to now, so a rug that
+// already happened before the reset dropped out of the checked window
+// entirely (the recent price is flat post-crash, so it read as "no danger").
+// Re-adding the same mint now reuses its original entry time.
+const ENTRY_TIMES_KEY = 'rugscore_entry_times';
+const REFRESH_MS = 30000;
+
+function getWatchlist() {
+  try { return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]'); } catch { return []; }
+}
+function saveWatchlist(list) {
+  try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list)); } catch {}
+}
+function getEntryTimes() {
+  try { return JSON.parse(localStorage.getItem(ENTRY_TIMES_KEY) || '{}'); } catch { return {}; }
+}
+function saveEntryTimes(times) {
+  try { localStorage.setItem(ENTRY_TIMES_KEY, JSON.stringify(times)); } catch {}
+}
+function addToWatchlist(mint) {
+  const times = getEntryTimes();
+  if (!times[mint]) { times[mint] = Date.now(); saveEntryTimes(times); }
+  const list = getWatchlist();
+  if (!list.some((w) => w.mint === mint)) list.push({ mint, boughtAt: times[mint] });
+  saveWatchlist(list);
+  renderWatchlist();
+}
+function removeFromWatchlist(mint) {
+  // Only hides it from the active list — the remembered entry time stays,
+  // so re-watching the same mint later doesn't lose the original clock.
+  saveWatchlist(getWatchlist().filter((w) => w.mint !== mint));
+  renderWatchlist();
+}
+
+function fmtElapsed(min) {
+  if (min < 60) return `${min}min ago`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${h}h${m ? ' ' + m + 'min' : ''} ago`;
+}
+
+async function renderWatchlist() {
+  const list = getWatchlist();
+  const heading = $('watchlist-heading'), sub = $('watchlist-sub'), container = $('watchlist');
+  if (list.length === 0) {
+    heading.hidden = true; sub.hidden = true; container.innerHTML = '';
+    return;
+  }
+  heading.hidden = false; sub.hidden = false;
+  container.innerHTML = list.map((w) => `<div class="card" data-row="${w.mint}"><p style="color:#7c8398;font-size:0.85rem;margin:0 0 4px">Checking...</p></div>`).join('');
+
+  for (const w of list) {
+    const minutes = Math.max(1, Math.round((Date.now() - w.boughtAt) / 60000));
+    let data;
+    try {
+      const res = await fetch(`/api/guard?mint=${encodeURIComponent(w.mint)}&sinceMinutes=${minutes}`);
+      data = await res.json();
+    } catch (e) {
+      data = { triggered: null, note: 'Error: ' + e.message };
+    }
+    const row = container.querySelector(`[data-row="${w.mint}"]`);
+    if (!row) continue; // removed while awaiting
+
+    const mintShort = w.mint.slice(0, 4) + '…' + w.mint.slice(-4);
+    let inner = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <p style="font-family:monospace;font-size:0.85rem;color:#9aa2b1;margin:0">${mintShort} · bought ${fmtElapsed(minutes)}</p>
+      <button class="stop-btn" data-mint="${w.mint}" style="background:none;border:none;color:#6b7280;font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0">stop watching</button>
+    </div>`;
+
+    if (data.triggered === null) {
+      inner += `<p style="color:#7c8398;font-size:0.85rem;margin:10px 0 0">${data.note || data.error}</p>`;
+    } else {
+      const cls = data.triggered ? 'danger' : 'ok';
+      const label = data.triggered ? 'DANGER PATTERN SEEN' : 'No danger pattern seen';
+      inner += `<p class="verdict ${cls}" style="margin:10px 0 6px">${label}</p>
+        <p style="font-size:0.85rem;color:#cbd0dc;margin:0">${data.recommendation}</p>`;
+      if (data.candleResolutionNote) inner += `<p style="font-size:0.78rem;color:#7c8398;margin:8px 0 0">${data.candleResolutionNote}</p>`;
+    }
+    row.innerHTML = inner;
+    row.querySelector('.stop-btn').addEventListener('click', (e) => removeFromWatchlist(e.target.dataset.mint));
+  }
+}
+
+renderWatchlist();
+setInterval(renderWatchlist, REFRESH_MS);
+
+const guardStatusEl = $('guardStatus');
+const guardResultEl = $('guardResult');
+
+async function checkGuard() {
+  const mint = $('guardMint').value.trim();
+  const minutes = $('guardMinutes').value;
+  if (!mint || !minutes) return;
+  $('guardGo').disabled = true;
+  guardStatusEl.textContent = 'Checking price history...';
+  guardResultEl.innerHTML = '';
+  try {
+    const res = await fetch(`/api/guard?mint=${encodeURIComponent(mint)}&sinceMinutes=${encodeURIComponent(minutes)}`);
+    const data = await res.json();
+    renderGuard(data);
+    guardStatusEl.textContent = '';
+  } catch (e) {
+    guardStatusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    $('guardGo').disabled = false;
+  }
+}
+
+function renderGuard(data) {
+  if (data.triggered === null) {
+    guardResultEl.innerHTML = `<div class="card"><p style="color:#7c8398;font-size:0.9rem;margin:0">${data.note || data.error}</p></div>`;
+    return;
+  }
+  const cls = data.triggered ? 'danger' : 'ok';
+  const label = data.triggered ? 'DANGER PATTERN SEEN' : 'No danger pattern seen';
+  let html = `<div class="card">
+    <p class="verdict ${cls}">${label}</p>
+    <div class="grid">
+      <div class="stat"><div class="label">Worst single-candle drop</div><div class="value">${data.worstSingleCandleDropPct}%</div></div>
+      <div class="stat"><div class="label">Trigger threshold</div><div class="value">${data.thresholdPct}%</div></div>
+    </div>
+    <p style="font-size:0.85rem;color:#cbd0dc;margin:14px 0 0">${data.recommendation}</p>`;
+  if (data.candleResolutionNote) html += `<p style="font-size:0.78rem;color:#7c8398;margin:10px 0 0">${data.candleResolutionNote}</p>`;
+  html += `</div>`;
+  guardResultEl.innerHTML = html;
+}
+
+$('guardGo').addEventListener('click', checkGuard);
+$('guardMinutes').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkGuard(); });
+
+// --- Wallet auto-check (10/9/2026) ---------------------------------------
+// Reads current holdings from a wallet address (public RPC, no connect/sign)
+// and runs the same reputation + guard check per token automatically.
+const walletStatusEl = $('walletStatus');
+const walletResultEl = $('walletResult');
+
+function renderWalletCard(item) {
+  const rep = item.reputation;
+  const repCls = !rep.known ? 'unknown' : rep.verdict === 'PASSES' ? 'pass' : 'flag';
+  const repLabel = !rep.known ? 'UNKNOWN' : rep.verdict;
+  const mintShort = item.mint.slice(0, 4) + '…' + item.mint.slice(-4);
+
+  let guardHtml;
+  if (item.guard == null) {
+    guardHtml = `<p style="color:#7c8398;font-size:0.85rem;margin:8px 0 0">${item.guardNote || 'No guard check available.'}</p>`;
+  } else if (item.guard.triggered === null) {
+    guardHtml = `<p style="color:#7c8398;font-size:0.85rem;margin:8px 0 0">${item.guard.note}</p>`;
+  } else {
+    const cls = item.guard.triggered ? 'danger' : 'ok';
+    const label = item.guard.triggered ? 'DANGER PATTERN SEEN' : 'No danger pattern seen';
+    guardHtml = `<p class="verdict ${cls}" style="font-size:0.95rem;margin:8px 0 4px">${label}</p>
+      <p style="font-size:0.82rem;color:#cbd0dc;margin:0">${item.guard.recommendation}</p>`;
+  }
+  if (item.entryTimeApprox) {
+    guardHtml += `<p style="font-size:0.75rem;color:#7c8398;margin:6px 0 0">Entry time is approximate (only the last ~25 on-chain transactions on this position were checked) — if you've held longer than that history covers, the real entry may be older, and a real earlier drop could be missed.</p>`;
+  }
+
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <p style="font-family:monospace;font-size:0.85rem;color:#9aa2b1;margin:0">${mintShort} · ${item.amount.toLocaleString()} held</p>
+      <p class="verdict ${repCls}" style="font-size:0.85rem;margin:0">${repLabel}</p>
+    </div>
+    ${guardHtml}
+    <button class="watch-btn" data-mint="${item.mint}" style="margin-top:12px;background:#1c2030;color:#e6e8ee;border:1px solid #2a2f3f;font-size:0.85rem;padding:8px 14px">Watch it</button>
+  </div>`;
+}
+
+function renderWallet(data) {
+  if (data.error) {
+    walletResultEl.innerHTML = `<div class="card"><p style="color:#f87171;font-size:0.9rem;margin:0">${data.error}</p></div>`;
+    return;
+  }
+  if (data.tokensHeld === 0) {
+    walletResultEl.innerHTML = `<div class="card"><p style="color:#7c8398;font-size:0.9rem;margin:0">No SPL tokens found in this wallet.</p></div>`;
+    return;
+  }
+  let html = data.results.map(renderWalletCard).join('');
+  if (data.tokensHeld > data.tokensChecked) {
+    html += `<p style="color:#7c8398;font-size:0.8rem;margin:8px 0 0">Showing ${data.tokensChecked} of ${data.tokensHeld} tokens held (capped to keep this fast).</p>`;
+  }
+  walletResultEl.innerHTML = html;
+  walletResultEl.querySelectorAll('.watch-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      addToWatchlist(e.target.dataset.mint);
+      e.target.textContent = 'Watching ✓';
+      e.target.disabled = true;
+    });
+  });
+}
+
+async function checkWallet() {
+  const address = $('walletAddress').value.trim();
+  if (!address) return;
+  $('walletGo').disabled = true;
+  walletStatusEl.textContent = 'Reading wallet holdings and on-chain history — can take a few seconds per token...';
+  walletResultEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/wallet?address=' + encodeURIComponent(address));
+    const data = await res.json();
+    renderWallet(data);
+    walletStatusEl.textContent = '';
+  } catch (e) {
+    walletStatusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    $('walletGo').disabled = false;
+  }
+}
+
+$('walletGo').addEventListener('click', checkWallet);
+$('walletAddress').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkWallet(); });
 </script>
 </body>
 </html>
